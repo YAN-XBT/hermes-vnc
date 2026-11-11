@@ -83,6 +83,37 @@ def png_size(raw: bytes) -> tuple[int, int]:
     return int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
 
 
+#: The one thing the model must know about every frame from this backend.
+_PIXELS_ONLY_NOTE = (
+    "VNC desktop: this backend returns pixels only (no accessibility elements), so act by x/y "
+    "coordinates read off this screenshot. list_apps/focus_app/set_value are unavailable."
+)
+
+
+def shrink_png(raw: bytes, max_width: int) -> tuple[bytes, int, int]:
+    """``(png, width, height)`` downscaled so the image is at most *max_width* wide.
+
+    Vision tokens scale with the image's area, so this is where a capture's cost to the model
+    is actually decided — a 1600x900 frame and a 1024x576 one differ by roughly 2.4x in tokens
+    for the same screen. The caller must tell the model the scale, because click coordinates
+    are in native desktop space, not image pixels.
+    """
+    try:
+        from PIL import Image
+    except Exception as exc:  # noqa: BLE001
+        raise VncError(f"downscaling a capture needs Pillow: {exc}") from exc
+
+    with Image.open(io.BytesIO(raw)) as image:
+        image = image.convert("RGB")
+        width, height = image.size
+        if width <= max_width:
+            return raw, width, height
+        height = max(1, round(height * max_width / width))
+        out = io.BytesIO()
+        image.resize((max_width, height), Image.BILINEAR).save(out, format="PNG", optimize=True)
+    return out.getvalue(), max_width, height
+
+
 def normalize_combo(keys: str) -> str:
     """``ctrl+shift+s`` / ``cmd - s`` -> vncdotool's ``ctrl-shift-s`` form."""
     parts = [part for part in re.split(r"[+\-\s]+", (keys or "").strip().lower()) if part]
@@ -181,6 +212,22 @@ class VncBackend(ComputerUseBackend):
                 "(raise computer_use.vnc.max_capture_bytes or lower the target's resolution)"
             )
         width, height = png_size(raw)
+        note = _PIXELS_ONLY_NOTE
+        ceiling = self.settings.capture_max_width
+        if ceiling and width > ceiling:
+            native_width, native_height = width, height
+            try:
+                raw, width, height = shrink_png(raw, ceiling)
+            except Exception as exc:  # noqa: BLE001 - a native frame beats no frame at all
+                logger.warning("hermes-vnc: downscaling the capture failed, sending it native: %s", exc)
+            else:
+                note = (
+                    f"{_PIXELS_ONLY_NOTE} This screenshot is {width}x{height} — "
+                    f"{100.0 * width / native_width:.0f}% of the desktop's native "
+                    f"{native_width}x{native_height}. Click coordinates are in NATIVE desktop space, "
+                    f"so multiply any position you read off this image by "
+                    f"{native_width / width:.4f} before acting."
+                )
         return CaptureResult(
             mode="vision",
             width=width,
@@ -190,8 +237,7 @@ class VncBackend(ComputerUseBackend):
             window_title=f"VNC {self.settings.label}",
             png_bytes_len=len(raw),
             image_mime_type="image/png",
-            note=("VNC desktop: this backend returns pixels only (no accessibility elements), so act by "
-                  "x/y coordinates read off this screenshot. list_apps/focus_app/set_value are unavailable."),
+            note=note,
         )
 
     # ---------------------------------------------------------------- pointer

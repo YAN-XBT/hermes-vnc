@@ -262,6 +262,59 @@ def test_capture_is_always_vision_even_when_som_is_requested():
     assert cap.mode == "vision" and cap.elements == []
 
 
+def test_capture_downscales_to_capture_max_width_and_states_the_scale():
+    """Vision tokens scale with the image's area, so this is the lever that sets what a capture
+    costs the model. The note has to carry the factor, because clicks are in native space."""
+    fake = FakeSession(png=png_bytes(1600, 900))
+    cap = backend_with(fake, capture_max_width=800).capture()
+    assert (cap.width, cap.height) == (800, 450), (cap.width, cap.height)
+    assert _backend.png_size(base64.b64decode(cap.png_b64)) == (800, 450)
+    assert "NATIVE desktop space" in cap.note, cap.note
+    assert "1600x900" in cap.note and "800x450" in cap.note, cap.note
+    assert "2.0000" in cap.note, cap.note
+
+
+def test_capture_stays_native_when_the_frame_is_already_narrow_enough():
+    cap = backend_with(FakeSession(png=png_bytes(640, 480)), capture_max_width=800).capture()
+    assert (cap.width, cap.height) == (640, 480), (cap.width, cap.height)
+    assert "NATIVE desktop space" not in cap.note, cap.note
+
+
+def test_capture_is_native_by_default_and_says_nothing_about_scale():
+    cap = backend_with(FakeSession(png=png_bytes(1600, 900))).capture()
+    assert (cap.width, cap.height) == (1600, 900), (cap.width, cap.height)
+    assert "NATIVE desktop space" not in cap.note, cap.note
+
+
+def test_shrink_png_keeps_the_aspect_ratio_and_leaves_small_frames_alone():
+    import io
+
+    from PIL import Image
+
+    raw, width, height = _backend.shrink_png(png_bytes(1600, 900), 640)
+    assert (width, height) == (640, 360), (width, height)
+    with Image.open(io.BytesIO(raw)) as decoded:
+        assert decoded.size == (640, 360), decoded.size
+
+    same, small_w, small_h = _backend.shrink_png(png_bytes(320, 200), 640)
+    assert (small_w, small_h) == (320, 200), (small_w, small_h)
+    assert same == png_bytes(320, 200), "a frame under the ceiling must be returned untouched"
+
+
+def test_a_failed_downscale_still_returns_a_native_frame():
+    """A native frame beats no frame: the failure is logged and the capture proceeds."""
+    fake = FakeSession(png=png_bytes(1600, 900))
+    real = _backend.shrink_png
+    try:
+        _backend.shrink_png = lambda raw, width: (_ for _ in ()).throw(RuntimeError("boom"))
+        cap = backend_with(fake, capture_max_width=800).capture()
+    finally:
+        _backend.shrink_png = real
+    assert (cap.width, cap.height) == (1600, 900), (cap.width, cap.height)
+    assert "NATIVE desktop space" not in cap.note, cap.note
+    assert cap.png_b64, "the frame must still be delivered"
+
+
 def test_capture_enforces_the_byte_cap():
     cap_size = len(png_bytes(64, 64))
     instance = backend_with(FakeSession(png=png_bytes(64, 64)), max_capture_bytes=cap_size - 1)

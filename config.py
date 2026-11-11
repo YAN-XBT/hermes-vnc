@@ -35,6 +35,10 @@ DEFAULT_CONNECT_TIMEOUT = 20.0
 DEFAULT_CALL_TIMEOUT = 60.0
 DEFAULT_ACTION_PAUSE = 0.12
 DEFAULT_MAX_CAPTURE_BYTES = 12_000_000
+# 0 = send the framebuffer at its native size. Any other value downscales the capture so the
+# image is at most that many pixels wide — the single biggest lever on what a capture costs the
+# model, since vision tokens scale with the image's area, not with the file size.
+DEFAULT_CAPTURE_MAX_WIDTH = 0
 
 #: Keys read out of ``computer_use.vnc``. Anything else in the block is ignored.
 SETTING_KEYS = (
@@ -62,6 +66,7 @@ class Settings:
     action_pause: float = DEFAULT_ACTION_PAUSE
     display_name: str = ""
     max_capture_bytes: int = DEFAULT_MAX_CAPTURE_BYTES
+    capture_max_width: int = DEFAULT_CAPTURE_MAX_WIDTH
 
     @property
     def target(self) -> str:
@@ -152,6 +157,7 @@ def load_settings() -> Settings:
     action_pause = _as_float(block.get("action_pause"), DEFAULT_ACTION_PAUSE)
     display_name = str(block.get("display_name") or "").strip()
     max_capture_bytes = _as_positive_int(block.get("max_capture_bytes"), DEFAULT_MAX_CAPTURE_BYTES)
+    capture_max_width = _as_positive_int(block.get("capture_max_width"), DEFAULT_CAPTURE_MAX_WIDTH)
 
     env_host = os.environ.get(ENV_HOST)
     if env_host:
@@ -173,4 +179,5 @@ def load_settings() -> Settings:
         action_pause=action_pause,
         display_name=display_name,
         max_capture_bytes=max_capture_bytes,
+        capture_max_width=capture_max_width,
     )

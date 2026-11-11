@@ -71,7 +71,31 @@ computer_use:
     call_timeout: 60       # seconds to wait for one protocol operation
     action_pause: 0.12     # seconds to let the remote compositor react
     max_capture_bytes: 12000000   # refuse a larger screenshot than this
+    capture_max_width: 0   # 0 = native. See "Cutting what a capture costs" below.
 ```
+
+### Cutting what a capture costs the model
+
+Vision tokens scale with the **area of the image**, not with the file size, so `capture_max_width`
+is the one setting that changes what a screenshot costs. Measured on a 1600×900 desktop:
+
+| `capture_max_width` | image | est. tokens | vs native |
+| --- | --- | --- | --- |
+| `0` (native) | 1600×900 | 1920 | 100% |
+| `1280` | 1280×720 | 1229 | 64% |
+| `1024` | 1024×576 | 786 | 41% |
+| `800` | 800×450 | 480 | 25% |
+| `640` | 640×360 | 307 | 16% |
+
+The catch is coordinate space. Click coordinates are **native desktop coordinates**, not image
+pixels, so when the frame is downscaled the backend appends the factor to the capture's note
+("multiply any position you read off this image by 2.0000 before acting"). That works, but it
+is arithmetic the model has to get right, and a mis-scaled click lands somewhere else entirely.
+Native is therefore the default; downscale when your screens are large and your budget is not.
+
+Two costs this does *not* touch, because Hermes already handles them: a capture whose frame is
+byte-identical to the previous one on the same target is not re-sent as an image at all, and
+older images are evicted from the context as it fills.
 
 The password is **not** read from `config.yaml`. Put it where Hermes keeps credentials —
 in the profile's `.env`:
@@ -119,11 +143,20 @@ JPEG; `dashboard/plugin_api.py` serves those frames on the plugin's own backend 
 (`/api/plugins/hermes-vnc/frame`), and the pane asks for one about every 350 ms. No new port is
 bound, and nothing is captured until the pane asks for a frame.
 
-Measured throughput, so nobody is surprised by it: each frame is a full-framebuffer request
-plus a round trip, so against a cloud host over an SSH tunnel a frame took **1.5–1.8 s**
-(≈0.6 fps) in testing, with the first one slower still while the connection is established. On
-a LAN it is a good deal faster. Running the server with `x11vnc -ncache 10` makes the far side
-send only what changed and is the single biggest win; lowering `max_width` helps too.
+Measured, so nobody is surprised by it: the frame rate is set by the round trip, not by the
+plugin. The same code, the same 53 KB frames, two targets:
+
+| Target | Per frame | Rate |
+| --- | --- | --- |
+| a **local** VNC server (loopback) | ~100 ms | **9.7 fps** |
+| a cloud host over an **SSH tunnel** | ~1.1 s | 0.9 fps |
+
+Each frame is a full-framebuffer request plus a round trip, so the tunnel is the whole story: a
+LAN target is smooth, a distant one is a slideshow. Lowering `max_width` helps on the margin.
+
+**Do not reach for `x11vnc -ncache`.** It is the usual advice for a slow live view, and here it
+is actively wrong: `-ncache` assumes a client that implements the cache protocol, and this one
+does not. Measured with it enabled, a frame took **11–23 s** — twenty times worse than without.
 
 Two things worth knowing. The target must accept **more than one viewer at a time** — x11vnc
 `-shared`, TightVNC, UltraVNC and macOS Screen Sharing all do by default, but a server
@@ -187,7 +220,7 @@ What a user should know before installing, per the catalog's disclosure rule:
 ## Tests
 
 Six suites, each runnable with or without pytest, using the interpreter `hermes` itself
-uses. 98 tests in total; none of them needs a VNC server or a network, and the four live
+uses. 103 tests in total; none of them needs a VNC server or a network, and the four live
 suites start their own scripted RFB server on loopback.
 
 ```bash
@@ -196,8 +229,9 @@ suites start their own scripted RFB server on loopback.
 # process into a runtime of its own choosing.
 PY=<HERMES_HOME>/installs/<hash>/environments/<hash>/venv/Scripts/python.exe
 
-# 35 tests — the backend against a recording fake session: capture, pointer, drag, wheel,
-# keysym typing, key combinations, the documented refusals, config and secret resolution
+# 40 tests — the backend against a recording fake session: capture, pointer, drag, wheel,
+# keysym typing, key combinations, the documented refusals, config and secret resolution, and
+# the capture downscaler (geometry, the scale note, and falling back to native on failure)
 "$PY" tests/test_hermes_vnc.py
 
 # 30 tests — the edges: session timeouts and Deferred errbacks, eight threads driving one
