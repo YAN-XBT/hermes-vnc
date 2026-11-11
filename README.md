@@ -220,7 +220,7 @@ What a user should know before installing, per the catalog's disclosure rule:
 ## Tests
 
 Six suites, each runnable with or without pytest, using the interpreter `hermes` itself
-uses. 103 tests in total; none of them needs a VNC server or a network, and the four live
+uses. 105 tests in total; none of them needs a VNC server or a network, and the four live
 suites start their own scripted RFB server on loopback.
 
 ```bash
@@ -252,9 +252,10 @@ PY=<HERMES_HOME>/installs/<hash>/environments/<hash>/venv/Scripts/python.exe
 # truncated framebuffer, a server dying mid-typing, reconnects, and two backends side by side
 "$PY" tests/test_live_rfb_faults.py
 
-# 10 tests — the live view's frame source: the downscaler's geometry, the config and
-# dead-target errors, one connection reused across frames, reopening after a close, and two
-# targets not sharing a session
+# 12 tests — the live view's frame source: the downscaler's geometry, the config and
+# dead-target errors, one connection reused across frames, reopening after a close, two targets
+# not sharing a session, the capped waits that keep a wedged link from hanging the pane, and
+# dropping a session whose capture failed so the next frame reconnects
 "$PY" tests/test_live_view.py
 ```
 

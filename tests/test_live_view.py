@@ -293,6 +293,63 @@ def test_close_lets_a_later_grab_open_a_fresh_connection():
     assert server.error is None, server.error
 
 
+def test_the_live_view_caps_its_waits_so_a_wedged_link_fails_fast():
+    """The pane's request must not outlive the Desktop app's own 30 s backend timeout: a frame
+    that takes longer than that shows the user a hang instead of an error."""
+    generous = _config.Settings(host="10.0.0.9", port=5900, password="", password_env="",
+                                connect_timeout=20.0, call_timeout=60.0, action_pause=0.0)
+    capped = _live._cap(generous)
+    assert capped.call_timeout == _live.LIVE_VIEW_CALL_TIMEOUT, capped.call_timeout
+    assert capped.connect_timeout == _live.LIVE_VIEW_CONNECT_TIMEOUT, capped.connect_timeout
+    assert (capped.host, capped.port) == ("10.0.0.9", 5900), "the target must not change"
+
+    tighter = _config.Settings(host="10.0.0.9", port=5900, password="", password_env="",
+                               connect_timeout=1.0, call_timeout=2.0, action_pause=0.0)
+    assert _live._cap(tighter).call_timeout == 2.0, "a tighter setting must never be raised"
+
+
+def test_a_failed_capture_drops_the_session_so_the_next_frame_reconnects():
+    """A link that died without the reactor noticing still reports itself as connected. Without
+    dropping it on failure, every later frame hangs on the same wedged session."""
+    server = with_server()
+    try:
+        _live.grab_jpeg(settings=settings_for(server.port), max_width=200)
+        assert server.connections == 1, server.connections
+
+        class Wedged:
+            connected = True                     # looks alive, exactly like a silently dropped link
+
+            def capture_screen(self, buffer, fmt="PNG"):
+                raise _session.VncError("the server did not answer")
+
+            def close(self):
+                pass
+
+        real = _live._session_ref
+        assert real is not None, "the first grab must have left a session behind"
+        real.close()                       # free the scripted server so it can accept the next one
+
+        with _live._lock:
+            _live._session_ref = Wedged()
+
+        try:
+            _live.grab_jpeg(settings=settings_for(server.port), max_width=200)
+        except _session.VncError:
+            pass
+        else:
+            raise AssertionError("the wedged session must fail, not return a frame")
+
+        assert _live._session_ref is None, "the wedged session must be dropped, not kept"
+
+        jpeg, _, _ = _live.grab_jpeg(settings=settings_for(server.port), max_width=200)
+        assert jpeg[:2] == b"\xff\xd8", jpeg[:4].hex()
+        assert server.connections == 2, f"expected a fresh connection, saw {server.connections}"
+    finally:
+        _live.close()
+        stop_server(server)
+    assert server.error is None, server.error
+
+
 def test_a_target_that_changes_reopens_instead_of_reusing_the_old_session():
     """Two different settings objects must not share one session."""
     first, second = with_server(320, 200), with_server(640, 480)
