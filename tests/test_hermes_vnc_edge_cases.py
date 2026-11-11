@@ -81,8 +81,10 @@ def settings(**over) -> _config.Settings:
 class FakeTransport:
     def __init__(self) -> None:
         self.lost = False
+        self.lose_calls = 0
 
     def loseConnection(self) -> None:
+        self.lose_calls += 1
         self.lost = True
 
 
@@ -291,11 +293,18 @@ def test_session_refuses_operations_before_open_and_after_close():
 
 
 def test_session_close_loses_the_connection_once():
+    """Closing is asynchronous by design (the loss runs on the reactor thread), so wait for it."""
     protocol = FakeProtocol()
     session = session_with(protocol)
     session.close()
-    assert protocol.transport.lost is True
+    session.close()                     # idempotent: there is nothing left to lose
     assert session._protocol is None
+
+    deadline = time.monotonic() + 5
+    while not protocol.transport.lost and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert protocol.transport.lost is True, "closing must actually drop the connection"
+    assert protocol.transport.lose_calls == 1, protocol.transport.lose_calls
 
 
 def test_ensure_reactor_is_single_under_concurrency():

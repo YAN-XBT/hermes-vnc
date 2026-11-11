@@ -88,6 +88,7 @@ class RfbSession:
         self._reactor = None
         self._factory = None
         self._protocol = None
+        self._lost = False          # the far side closed its end of the connection
         self._lock = threading.RLock()
 
     # ---------------------------------------------------------------- lifecycle
@@ -99,6 +100,7 @@ class RfbSession:
         with self._lock:
             if self._protocol is not None:
                 return
+            self._lost = False
             factory = factory_class()
             if self.settings.password:
                 factory.password = self.settings.password
@@ -117,6 +119,10 @@ class RfbSession:
                 return None
 
             def _on_lost(reason):
+                # Fires during the handshake *and* whenever the far side drops a connection
+                # that was already up: the factory keeps this callback for its whole life, so
+                # marking the session here is what stops a dead connection from being reused.
+                self._lost = True
                 outcome.setdefault(
                     "failure",
                     f"the server closed the connection during the handshake ({reason})",
@@ -160,13 +166,24 @@ class RfbSession:
                 logger.debug("hermes-vnc: losing the connection failed", exc_info=True)
 
         try:
-            reactor.callFromThread(_lose)
+            running = bool(getattr(reactor, "running", False))
         except Exception:
-            logger.debug("hermes-vnc: the reactor was gone before close", exc_info=True)
+            running = False
+
+        if running:
+            try:
+                reactor.callFromThread(_lose)
+                return
+            except Exception:
+                logger.debug("hermes-vnc: the reactor was gone before close", exc_info=True)
+        # Nothing will ever run the reactor again (or it refused the call), so losing the
+        # connection through it would queue the close forever: do it here instead.
+        _lose()
 
     @property
     def connected(self) -> bool:
-        return self._protocol is not None
+        """True only while the protocol object is live *and* the far side has not hung up."""
+        return self._protocol is not None and not self._lost
 
     # ---------------------------------------------------------------- plumbing
 

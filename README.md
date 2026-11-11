@@ -43,9 +43,17 @@ The backend maps the `computer_use` contract onto RFB:
 
 ```bash
 hermes plugins install YAN-XBT/hermes-vnc --yes-deps
+hermes plugins enable hermes-vnc          # installs the declared python_dependencies
 hermes config set computer_use.backend hermes-vnc
 hermes tools          # the computer_use row now names "VNC (remote desktop)"
 ```
+
+**Enable it, do not just install it.** `python_dependencies` are installed by *enabling* the
+plugin, and enabling builds a **new** pm environment that an already-running gateway or CLI
+does not switch to. So the order is: install, enable, then **restart the host**
+(`hermes gateway restart`, and restart the CLI). Without the restart the tool reports
+`vncdotool is not installed` even though the environment now has it — `hermes plugins show
+hermes-vnc` tells you which state you are in (`Status: enabled` or `Status: not enabled`).
 
 ## Configure
 
@@ -139,12 +147,15 @@ What a user should know before installing, per the catalog's disclosure rule:
 
 ## Tests
 
-Four suites, each runnable with or without pytest, using the Hermes venv's interpreter.
-72 tests in total; none of them needs a VNC server, and the two live suites start their own
-scripted RFB server on loopback.
+Five suites, each runnable with or without pytest, using the interpreter `hermes` itself
+uses. 88 tests in total; none of them needs a VNC server or a network, and the three live
+suites start their own scripted RFB server on loopback.
 
 ```bash
-PY=<HERMES_HOME>/hermes-agent/venv/Scripts/python.exe
+# The interpreter the Hermes launcher runs on — `hermes pm env` prints the environment, and
+# its venv is what matters. Using a different one makes Hermes' bootstrap re-exec the test
+# process into a runtime of its own choosing.
+PY=<HERMES_HOME>/installs/<hash>/environments/<hash>/venv/Scripts/python.exe
 
 # 35 tests — the backend against a recording fake session: capture, pointer, drag, wheel,
 # keysym typing, key combinations, the documented refusals, config and secret resolution
@@ -162,7 +173,30 @@ PY=<HERMES_HOME>/hermes-agent/venv/Scripts/python.exe
 # 5 tests — the failure modes: a server that dies mid-session, a growing framebuffer, a
 # rejected password, and a server that hangs up during the handshake
 "$PY" tests/test_live_rfb_edge_cases.py
+
+# 16 tests — fault injection: a port speaking another protocol, a close before the banner, a
+# silent server, a slow banner, a truncated auth challenge, a drop after authentication, a
+# truncated framebuffer, a server dying mid-typing, reconnects, and two backends side by side
+"$PY" tests/test_live_rfb_faults.py
 ```
+
+### Verifying the tool layer
+
+The suites above drive the backend. The layer above it — provider selection, the approval
+gate, the multimodal result — is exercised by asking Hermes itself, with this plugin
+selected and a VNC server reachable:
+
+```bash
+hermes config set computer_use.backend hermes-vnc
+hermes chat -q "Use computer_use to capture the screen and tell me its exact pixel size."
+```
+
+Driving that against a live TightVNC server returned `2560x1440` for a 2560x1440 desktop,
+with the capture arriving as an image part rather than JSON. The tool layer is deliberately
+not covered by a script in this directory: `handle_computer_use` pulls in Hermes' bootstrap,
+which re-executes any process started under a different interpreter, so a bare script cannot
+hold that layer still long enough to assert on it.
+
 
 ## Why the session is not `vncdotool.api.connect`
 
