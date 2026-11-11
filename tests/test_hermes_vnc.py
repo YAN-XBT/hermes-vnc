@@ -422,12 +422,15 @@ def test_stop_closes_the_session_and_clears_it():
     assert instance._session is None
 
 
-def test_reachability_probe_is_swappable_and_never_raises():
+def test_is_available_is_local_and_makes_no_network_call():
+    """The picker and `hermes setup` call this on every paint, so it must not probe the wire."""
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("is_available() must not touch the network")
+
     real = _backend.reachable
+    _backend.reachable = explode
     try:
-        _backend.reachable = lambda host, port, timeout=2.0: False
-        assert _backend.VncBackend(permission_mode="standard", settings=settings()).is_available() is False
-        _backend.reachable = lambda host, port, timeout=2.0: True
         assert _backend.VncBackend(permission_mode="standard", settings=settings()).is_available() is True
         assert _backend.VncBackend(permission_mode="standard",
                                    settings=settings(host="")).is_available() is False
@@ -466,16 +469,35 @@ def test_register_is_a_no_op_on_a_context_without_the_computer_use_api():
     pkg.register(BareCtx())  # must not raise: a generic plugin probe gets this context
 
 
-def test_provider_is_unavailable_without_a_target_and_never_raises():
+def test_provider_is_available_from_config_not_from_the_wire():
     provider = pkg.VncProvider()
     real = _config.load_settings
     try:
         _config.load_settings = lambda: settings(host="")
         assert provider.is_available() is False
+        # configured, and nothing is listening on port 1 — still available: the probe is
+        # doctor()'s job, not the picker's
         _config.load_settings = lambda: settings(host="127.0.0.1", port=1)
-        assert provider.is_available() is False  # nothing listens on port 1
+        assert provider.is_available() is True
     finally:
         _config.load_settings = real
+
+
+def test_doctor_reports_the_target_the_dependency_and_reachability():
+    provider = pkg.VncProvider()
+    real_load, real_reachable = _config.load_settings, _backend.reachable
+    try:
+        _config.load_settings = lambda: settings(host="")
+        assert provider.doctor() == 1, "no target configured must be a failure"
+
+        _config.load_settings = lambda: settings(host="desk.example.test")
+        _backend.reachable = lambda host, port, timeout=2.0: False
+        assert provider.doctor() == 1, "an unreachable target must be a failure"
+
+        _backend.reachable = lambda host, port, timeout=2.0: True
+        assert provider.doctor() == 0, "a reachable target with a dependency is usable"
+    finally:
+        _config.load_settings, _backend.reachable = real_load, real_reachable
 
 
 # ── config resolution ────────────────────────────────────────────────────────

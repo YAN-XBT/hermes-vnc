@@ -106,6 +106,16 @@ driver.
   be honoured; bring a window forward with a click or a key combination instead.
 * **One session per Hermes session.** The backend opens one connection when the tool first
   runs and closes it at the end of the session.
+* **`plugins.isolation: host` refuses it.** Computer-use providers hand back live driver
+  sessions, so Hermes loads them in-process only. Under `plugins.isolation: host` a
+  user-installed provider cannot be loaded — a host rule that applies to every
+  computer-use provider, not just this one.
+
+Check the target before blaming the plugin:
+
+```bash
+hermes computer-use doctor     # runs this provider's doctor(): target, dependency, reachability
+```
 
 ## Disclosure
 

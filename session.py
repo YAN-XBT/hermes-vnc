@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import socket
+import sys
 import threading
 from typing import Any, Callable, Optional
 
@@ -41,6 +42,24 @@ def _imports():
             "`pip install \"vncdotool>=1.2,<2\"` or reinstall this plugin with --yes-deps"
         ) from exc
     return reactor, VNCDoToolFactory, factory_connect
+
+
+def _require_pillow() -> None:
+    """vncdotool decodes every framebuffer with Pillow, and it fails *inside* the reactor.
+
+    Without this check a broken Pillow shows up as an unhandled error on the reactor thread
+    plus a 60-second timeout on the capture, which says nothing about the cause. Measured:
+    a Pillow whose compiled ``_imaging`` extension does not match the interpreter raises
+    ``ImportError("PIL")`` there and the capture simply never completes.
+    """
+    try:
+        from PIL import Image  # noqa: F401
+    except Exception as exc:
+        raise VncError(
+            "vncdotool cannot decode framebuffers: Pillow is not importable in this "
+            f"environment ({exc}). Install a Pillow wheel built for this Python "
+            f"({sys.version_info.major}.{sys.version_info.minor})."
+        ) from exc
 
 
 def ensure_reactor() -> Any:
@@ -75,6 +94,7 @@ class RfbSession:
 
     def open(self) -> None:
         reactor, factory_class, factory_connect = _imports()
+        _require_pillow()
         reactor = ensure_reactor()
         with self._lock:
             if self._protocol is not None:

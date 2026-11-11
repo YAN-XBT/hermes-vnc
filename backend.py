@@ -156,10 +156,12 @@ class VncBackend(ComputerUseBackend):
                 logger.debug("hermes-vnc: closing the session failed", exc_info=True)
 
     def is_available(self) -> bool:
-        """Cheap gate for the tool's check_fn: a target is configured and its port answers."""
-        if not self.settings.host:
-            return False
-        return reachable(self.settings.host, self.settings.port)
+        """Cheap gate for the tool's check_fn: a target is configured.
+
+        No network call here on purpose — the picker and ``hermes setup`` call this on every
+        paint. Reachability is ``VncProvider.doctor``'s job.
+        """
+        return bool(self.settings.host)
 
     # ---------------------------------------------------------------- capture
 

@@ -7,7 +7,6 @@ the plugin directory to import, so this module is only ever imported when it is 
 from __future__ import annotations
 
 import logging
-import socket
 
 
 from tools.computer_use.backend import ComputerUseBackend, ComputerUseProvider
@@ -33,17 +32,51 @@ class VncProvider(ComputerUseProvider):
         return VncBackend(permission_mode=permission_mode)
 
     def is_available(self) -> bool:
-        """A target is configured and its VNC port accepts a connection right now."""
-        settings = _config.load_settings()
-        if not settings.host:
-            logger.debug("%s: no target configured (computer_use.vnc.host)", PROVIDER_NAME)
+        """A target is configured and the RFB client is importable.
+
+        Deliberately local and cheap: Hermes calls this on every paint of the provider
+        picker and from ``hermes setup``, so it must not touch the network. Whether the
+        target actually answers is what :meth:`doctor` is for.
+        """
+        if not _config.load_settings().host:
             return False
         try:
-            with socket.create_connection((settings.host, int(settings.port)), timeout=2.0):
-                return True
-        except OSError as exc:
-            logger.debug("%s: %s:%s did not answer (%s)", PROVIDER_NAME, settings.host, settings.port, exc)
+            import vncdotool.client  # noqa: F401
+        except Exception:
+            logger.debug("%s: vncdotool is not importable", PROVIDER_NAME)
             return False
+        return True
+
+    def doctor(self) -> int:
+        """Reachability report for ``hermes computer-use doctor``. 0 = usable."""
+        settings = _config.load_settings()
+        print(f"{PROVIDER_NAME}: target {settings.label}")
+
+        try:
+            import vncdotool.client  # noqa: F401
+
+            print("  dependency : vncdotool importable")
+        except Exception as exc:
+            print(f"  dependency : MISSING ({exc})")
+            print("               install it with pip install \"vncdotool>=1.2,<2\"")
+            return 1
+
+        if not settings.host:
+            print("  target     : not configured — set computer_use.vnc.host (or HERMES_VNC_HOST)")
+            return 1
+
+        from .backend import reachable
+
+        if not reachable(settings.host, settings.port):
+            print(f"  reachable  : NO — nothing accepted a TCP connection on "
+                  f"{settings.host}:{settings.port}")
+            print("               is the VNC server running on the target, and is the port open?")
+            return 1
+
+        print("  reachable  : yes")
+        print(f"  password   : {'from ' + settings.password_env if settings.password else 'NOT SET'}"
+              f" ({'found' if settings.password else 'missing — the server will refuse the connection'})")
+        return 0
 
 
 def register(ctx) -> None:

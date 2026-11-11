@@ -248,7 +248,8 @@ def test_real_backend_reports_a_refused_connection_cleanly():
         permission_mode="standard",
         settings=_config.Settings(host="127.0.0.1", port=port, connect_timeout=3.0, action_pause=0.0),
     )
-    assert instance.is_available() is False
+    # A configured target is "available" locally; the dead port only shows up when used.
+    assert instance.is_available() is True
     result = instance.click(x=1, y=1)
     assert result.ok is False and result.code == "transport_error", result
     instance.stop()
