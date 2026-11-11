@@ -550,7 +550,12 @@ def test_settings_tolerates_a_missing_or_broken_block():
         _config._raw_block = real_block
 
 
-def test_read_secret_prefers_the_scope_then_the_environment_and_never_raises():
+def test_read_secret_uses_only_the_secret_scope_and_never_raises():
+    """Admission rule 11: credentials come through Hermes, never from a bare environment read.
+
+    A fallback to ``os.environ`` looks harmless and is not: under multiplexing the process
+    environment can hold another profile's value for the same name.
+    """
     import agent.secret_scope as scope
 
     real_get, real_read = scope.get_secret, _config.read_secret
@@ -561,7 +566,8 @@ def test_read_secret_prefers_the_scope_then_the_environment_and_never_raises():
         scope.get_secret = lambda name, default=None: None
         os.environ["HERMES_VNC_TEST_SECRET"] = "from-env"
         try:
-            assert real_read("HERMES_VNC_TEST_SECRET") == "from-env"
+            assert real_read("HERMES_VNC_TEST_SECRET") == "", \
+                "the process environment must not be consulted for a credential"
         finally:
             del os.environ["HERMES_VNC_TEST_SECRET"]
 

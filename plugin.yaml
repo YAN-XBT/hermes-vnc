@@ -1,5 +1,5 @@
 name: hermes-vnc
-version: "0.1.3"
+version: "0.1.4"
 description: >-
   Computer-use backend that drives any machine reachable over VNC (RFB): the stock
   computer_use tool captures the remote screen and moves that machine's mouse and
@@ -23,3 +23,8 @@ tags:
   - remote-desktop
 python_dependencies:
   - "vncdotool>=1.2,<2"
+# The settings live in a core section, so Hermes has to be told this plugin reads them:
+# without it every `hermes config get/set computer_use.vnc.*` answers
+# "'computer_use.vnc.host' is not a recognized config key — Hermes may not read it".
+config_keys:
+  - "computer_use.vnc"

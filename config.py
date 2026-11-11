@@ -16,8 +16,11 @@ multiplexed gateway never picks up another profile's value.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 CONFIG_SECTION = "computer_use"
 CONFIG_BLOCK = "vnc"
@@ -115,22 +118,25 @@ def _as_float(value, default: float) -> float:
 def read_secret(name: str) -> str:
     """Resolve a credential by variable name through Hermes' secret scope.
 
-    Falls back to the process environment only when the scope has no value for it, and
-    degrades to an empty string rather than raising: a missing password is a connection
-    error the backend reports, not an import-time crash.
+    Only Hermes' route is used — never a bare ``os.environ`` read, which under multiplexing
+    can pick up another profile's value. ``get_secret`` already resolves the active profile's
+    ``.env``, so a password set there (or saved by the install prompt) is found. Degrades to
+    an empty string rather than raising: a missing password is a connection error the backend
+    reports, not an import-time crash.
     """
     name = (name or "").strip()
     if not name:
         return ""
-    value = None
     try:
         from agent.secret_scope import get_secret
-
+    except Exception:
+        logger.debug("hermes-vnc: no secret scope here, so no password is available")
+        return ""
+    try:
         value = get_secret(name, None)
     except Exception:
-        value = None
-    if value is None:
-        value = os.environ.get(name)
+        logger.debug("hermes-vnc: reading %s from the secret scope failed", name, exc_info=True)
+        return ""
     return (value or "").strip()
 
 
