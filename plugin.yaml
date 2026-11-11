@@ -1,5 +1,5 @@
 name: hermes-vnc
-version: "0.2.2"
+version: "0.2.3"
 description: >-
   Computer-use backend that drives any machine reachable over VNC (RFB): the stock
   computer_use tool captures the remote screen and moves that machine's mouse and
@@ -7,8 +7,8 @@ description: >-
   with no Hermes process running on it. Select it with computer_use.backend: hermes-vnc
   and point computer_use.vnc.host at the target. VNC carries pixels only, so the backend
   runs in the screenshot lane: capture returns a PNG and no accessibility elements, and
-  element-addressed actions (list_apps, focus_app, set_value, click-by-element) report
-  unsupported_action instead of guessing.
+  element-addressed actions (click-by-element, focus_app, set_value) report unsupported_action
+  instead of guessing while list_apps / list_windows return empty lists.
 author: YAN-XBT
 license: MIT
 homepage: https://github.com/YAN-XBT/hermes-vnc

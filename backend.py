@@ -10,8 +10,10 @@ What it can and cannot do is fixed by RFB, not by this code:
   ``CaptureResult.mode`` is always ``"vision"``.
 * **There is no accessibility tree.** RFB carries pixels, not roles or labels, so
   ``capture`` returns no ``elements`` and the element-addressed operations
-  (``click(element=…)``, ``focus_app``, ``set_value``, ``list_apps``) answer
-  ``unsupported_action`` rather than inventing an index.
+  (``click(element=…)``, ``focus_app``, ``set_value``) answer ``unsupported_action`` rather
+  than inventing an index; ``list_apps`` and ``list_windows`` return empty lists, because an
+  empty inventory is the honest answer and a made-up one would send the model hunting for
+  windows that cannot be addressed anyway.
 * **Pointer and keyboard input** is delivered to whatever the remote machine has focused.
   There is no background delivery mode over VNC — the remote pointer really moves — so the
   requested ``delivery_mode`` is reported back rather than honoured.
@@ -86,7 +88,8 @@ def png_size(raw: bytes) -> tuple[int, int]:
 #: The one thing the model must know about every frame from this backend.
 _PIXELS_ONLY_NOTE = (
     "VNC desktop: this backend returns pixels only (no accessibility elements), so act by x/y "
-    "coordinates read off this screenshot. list_apps/focus_app/set_value are unavailable."
+    "coordinates read off this screenshot. focus_app and set_value answer unsupported_action, and "
+    "list_apps / list_windows return empty lists rather than inventing an inventory."
 )
 
 
