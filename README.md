@@ -178,6 +178,15 @@ second control channel: it never sends input.
   type it through this protocol.
 * **No window management.** `focus_app`, `set_value` and element-addressed actions cannot
   be honoured; bring a window forward with a click or a key combination instead.
+* **Authentication covers what real targets offer.** The client presents none, VNC password,
+  and Apple's Diffie-Hellman (ARD) — the three a desktop VNC server realistically asks for,
+  including macOS Screen Sharing. A server that offers only something else is refused with
+  its own list of security types in the message, rather than hanging.
+* **The framebuffer size is the target's, read per frame.** Nothing is cached from the first
+  connect. TigerVNC's `Xvnc` answered 675x800 on the first frame of a fresh connection and
+  1280x800 — the geometry it was started with — on every frame after; the backend reported
+  each frame as it arrived. The coordinates to click are always in the size the last capture
+  reported.
 * **One session per Hermes session.** The backend opens one connection when the tool first
   runs and closes it at the end of the session.
 * **`plugins.isolation: host` refuses it.** Computer-use providers hand back live driver
