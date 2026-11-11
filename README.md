@@ -99,6 +99,37 @@ Once `computer_use.backend` is `hermes-vnc`, ask in plain language:
 The model gets a screenshot and works in coordinates, exactly as it would with the built-in
 driver.
 
+## Watching it work — the live view
+
+The tool path gives the *agent* still frames, because that is what an agent needs: look,
+decide, act. A person watching wants the opposite, so the plugin ships a second, optional
+surface for them — a pane in the Hermes Desktop app showing the remote screen continuously.
+
+```
+Ctrl+K / ⌘K → Show the remote screen pane     # docks beside the chat, in the right sidebar
+Ctrl+K / ⌘K → Open the remote screen          # the full page, or Ctrl+Alt+V
+```
+
+It is **off by default**: enable it once in **Capabilities ▸ Plugins** and it stays off until
+asked, like every desktop plugin.
+
+How it works: `live_view.py` opens its **own** RFB connection to the same target, through the
+same session code the tool uses, downscales each frame to 960 px wide and re-encodes it as
+JPEG; `dashboard/plugin_api.py` serves those frames on the plugin's own backend namespace
+(`/api/plugins/hermes-vnc/frame`), and the pane asks for one about every 350 ms. No new port is
+bound, and nothing is captured until the pane asks for a frame.
+
+Measured throughput, so nobody is surprised by it: each frame is a full-framebuffer request
+plus a round trip, so against a cloud host over an SSH tunnel a frame took **1.5–1.8 s**
+(≈0.6 fps) in testing, with the first one slower still while the connection is established. On
+a LAN it is a good deal faster. Running the server with `x11vnc -ncache 10` makes the far side
+send only what changed and is the single biggest win; lowering `max_width` helps too.
+
+Two things worth knowing. The target must accept **more than one viewer at a time** — x11vnc
+`-shared`, TightVNC, UltraVNC and macOS Screen Sharing all do by default, but a server
+configured for a single viewer will drop the other connection. And the pane is a viewer, not a
+second control channel: it never sends input.
+
 ## Limits — read these before relying on it
 
 * **Pixels only.** RFB carries a framebuffer, not an accessibility tree, so there are no
@@ -142,13 +173,21 @@ What a user should know before installing, per the catalog's disclosure rule:
 * **Background processes.** One daemon thread runs Twisted's reactor, started on first
   connect and deliberately never stopped: the reactor is process-wide and cannot be
   restarted, so stopping it would break every later session in the same Hermes process.
+* **Live view (optional, off by default).** When enabled, the desktop pane holds a **second**
+  RFB connection to the same target and asks it for a frame about three times a second. Frames
+  are downscaled and JPEG-encoded in memory and are never written to disk. The pane sends no
+  input — it is a viewer. Disabling the pane stops the polling and the connection closes with
+  the session.
+* **UI surface.** The desktop half registers a pane, a page, a sidebar entry, two palette
+  commands and one rebindable hotkey, and it uses nothing but the plugin SDK. It contributes
+  nothing while disabled.
 * **Telemetry.** None, of any kind.
 * **Dependency.** `vncdotool>=1.2,<2`, pinned with an upper bound.
 
 ## Tests
 
-Five suites, each runnable with or without pytest, using the interpreter `hermes` itself
-uses. 88 tests in total; none of them needs a VNC server or a network, and the three live
+Six suites, each runnable with or without pytest, using the interpreter `hermes` itself
+uses. 98 tests in total; none of them needs a VNC server or a network, and the four live
 suites start their own scripted RFB server on loopback.
 
 ```bash
@@ -178,6 +217,11 @@ PY=<HERMES_HOME>/installs/<hash>/environments/<hash>/venv/Scripts/python.exe
 # silent server, a slow banner, a truncated auth challenge, a drop after authentication, a
 # truncated framebuffer, a server dying mid-typing, reconnects, and two backends side by side
 "$PY" tests/test_live_rfb_faults.py
+
+# 10 tests — the live view's frame source: the downscaler's geometry, the config and
+# dead-target errors, one connection reused across frames, reopening after a close, and two
+# targets not sharing a session
+"$PY" tests/test_live_view.py
 ```
 
 ### Verifying the tool layer

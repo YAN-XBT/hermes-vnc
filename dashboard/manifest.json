@@ -1,0 +1,8 @@
+{
+  "name": "hermes-vnc",
+  "label": "VNC",
+  "description": "Live view of the remote desktop the computer_use backend drives",
+  "icon": "DeviceDesktop",
+  "version": "0.2.0",
+  "api": "plugin_api.py"
+}
