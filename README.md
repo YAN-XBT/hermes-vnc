@@ -1,5 +1,7 @@
 # hermes-vnc
 
+![hermes-vnc — give Hermes hands on another computer](assets/banner.jpg)
+
 **Give Hermes hands on another computer.** A `computer_use` backend for
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) that drives any machine
 reachable over VNC (RFB): the stock `computer_use` tool captures that machine's screen and
@@ -137,15 +139,29 @@ What a user should know before installing, per the catalog's disclosure rule:
 
 ## Tests
 
-Two suites, both runnable with or without pytest, using the Hermes venv's interpreter:
+Four suites, each runnable with or without pytest, using the Hermes venv's interpreter.
+72 tests in total; none of them needs a VNC server, and the two live suites start their own
+scripted RFB server on loopback.
 
 ```bash
-# protocol logic: the backend against a recording fake session
-<HERMES_HOME>/hermes-agent/venv/Scripts/python.exe tests/test_hermes_vnc.py
+PY=<HERMES_HOME>/hermes-agent/venv/Scripts/python.exe
 
-# the real client against a scripted RFB server on loopback:
-# handshake, framebuffer, pointer, keysyms, wheel buttons, cut text
-<HERMES_HOME>/hermes-agent/venv/Scripts/python.exe tests/test_live_rfb.py
+# 35 tests — the backend against a recording fake session: capture, pointer, drag, wheel,
+# keysym typing, key combinations, the documented refusals, config and secret resolution
+"$PY" tests/test_hermes_vnc.py
+
+# 30 tests — the edges: session timeouts and Deferred errbacks, eight threads driving one
+# backend, reopening after a dead session, negative and non-numeric coordinates, scroll
+# clamping, mixed-script typing, port and cap validation
+"$PY" tests/test_hermes_vnc_edge_cases.py
+
+# 2 tests — the real client against a scripted RFB server: handshake, framebuffer, pointer,
+# keysyms, wheel buttons, cut text
+"$PY" tests/test_live_rfb.py
+
+# 5 tests — the failure modes: a server that dies mid-session, a growing framebuffer, a
+# rejected password, and a server that hangs up during the handshake
+"$PY" tests/test_live_rfb_edge_cases.py
 ```
 
 ## Why the session is not `vncdotool.api.connect`

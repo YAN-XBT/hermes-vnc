@@ -1,5 +1,5 @@
 name: hermes-vnc
-version: "0.1.1"
+version: "0.1.2"
 description: >-
   Computer-use backend that drives any machine reachable over VNC (RFB): the stock
   computer_use tool captures the remote screen and moves that machine's mouse and

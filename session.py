@@ -116,7 +116,23 @@ class RfbSession:
                 connected.set()
                 return None
 
+            def _on_lost(reason):
+                outcome.setdefault(
+                    "failure",
+                    f"the server closed the connection during the handshake ({reason})",
+                )
+                connected.set()
+
             factory.deferred.addCallbacks(_on_connect, _on_failure)
+            # vncdotool errbacks the deferred only on connect *failure*. A server that
+            # accepts the TCP connection and then drops it during the handshake — a rejected
+            # password, a server that closes on an unknown security type — lands in
+            # clientConnectionLost instead, which never touches the deferred, so waiting on
+            # it alone reports "timed out after Ns" for what is really an auth failure.
+            # Measured against a scripted server that rejects VNC auth and closes.
+            lost_callbacks = getattr(factory, "_disconnect_callbacks", None)
+            if isinstance(lost_callbacks, list):
+                lost_callbacks.append(_on_lost)
             reactor.callFromThread(factory_connect, factory, self.settings.host,
                                    int(self.settings.port), socket.AF_INET)
             if not connected.wait(self.settings.connect_timeout):

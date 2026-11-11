@@ -205,6 +205,15 @@ class VncBackend(ComputerUseBackend):
             return ActionResult(ok=False, action="click", code="invalid_arguments",
                                 message="click needs x and y; an element index cannot be resolved over VNC.")
         try:
+            x, y = int(x), int(y)
+        except (TypeError, ValueError):
+            return ActionResult(ok=False, action="click", code="invalid_arguments",
+                                message=f"click coordinates must be integers; got {x!r}, {y!r}.")
+        if x < 0 or y < 0:
+            return ActionResult(ok=False, action="click", code="invalid_arguments",
+                                message=f"click coordinates are framebuffer pixels and cannot be negative; "
+                                        f"got {x},{y}.")
+        try:
             client = self._require()
             held = modifier_names(modifiers)
             number = _BUTTONS.get(button, 1)
@@ -232,8 +241,16 @@ class VncBackend(ComputerUseBackend):
         if not from_xy or not to_xy:
             return ActionResult(ok=False, action="drag", code="invalid_arguments",
                                 message="drag needs from_xy and to_xy.")
-        x0, y0 = int(from_xy[0]), int(from_xy[1])
-        x1, y1 = int(to_xy[0]), int(to_xy[1])
+        try:
+            x0, y0 = int(from_xy[0]), int(from_xy[1])
+            x1, y1 = int(to_xy[0]), int(to_xy[1])
+        except (TypeError, ValueError, IndexError):
+            return ActionResult(ok=False, action="drag", code="invalid_arguments",
+                                message=f"drag corners must be integer pairs; got {from_xy!r} and {to_xy!r}.")
+        if min(x0, y0, x1, y1) < 0:
+            return ActionResult(ok=False, action="drag", code="invalid_arguments",
+                                message=f"drag corners are framebuffer pixels and cannot be negative; "
+                                        f"got {x0},{y0} -> {x1},{y1}.")
         try:
             client = self._require()
             held = modifier_names(modifiers)
@@ -262,7 +279,21 @@ class VncBackend(ComputerUseBackend):
         if number is None:
             return ActionResult(ok=False, action="scroll", code="invalid_arguments",
                                 message="scroll direction must be up, down, left or right.")
-        ticks = max(1, min(int(amount or 1), 50))
+        try:
+            ticks = max(1, min(int(amount or 1), 50))
+        except (TypeError, ValueError):
+            return ActionResult(ok=False, action="scroll", code="invalid_arguments",
+                                message=f"scroll amount must be a number; got {amount!r}.")
+        if x is not None and y is not None:
+            try:
+                x, y = int(x), int(y)
+            except (TypeError, ValueError):
+                return ActionResult(ok=False, action="scroll", code="invalid_arguments",
+                                    message=f"scroll coordinates must be integers; got {x!r}, {y!r}.")
+            if x < 0 or y < 0:
+                return ActionResult(ok=False, action="scroll", code="invalid_arguments",
+                                    message=f"scroll coordinates are framebuffer pixels and cannot be "
+                                            f"negative; got {x},{y}.")
         try:
             client = self._require()
             held = modifier_names(modifiers)

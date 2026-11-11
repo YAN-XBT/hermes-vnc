@@ -93,6 +93,17 @@ def _as_int(value, default: int) -> int:
         return default
 
 
+def _as_port(value, default: int) -> int:
+    """A TCP port must be 1-65535; anything else falls back to the default."""
+    port = _as_int(value, default)
+    return port if 1 <= port <= 65535 else default
+
+
+def _as_positive_int(value, default: int) -> int:
+    size = _as_int(value, default)
+    return size if size > 0 else default
+
+
 def _as_float(value, default: float) -> float:
     try:
         out = float(value)
@@ -128,13 +139,13 @@ def load_settings() -> Settings:
     block = _raw_block()
 
     host = str(block.get("host") or "").strip()
-    port = _as_int(block.get("port"), DEFAULT_PORT)
+    port = _as_port(block.get("port"), DEFAULT_PORT)
     password_env = str(block.get("password_env") or "").strip() or DEFAULT_PASSWORD_ENV
     connect_timeout = _as_float(block.get("connect_timeout"), DEFAULT_CONNECT_TIMEOUT)
     call_timeout = _as_float(block.get("call_timeout"), DEFAULT_CALL_TIMEOUT)
     action_pause = _as_float(block.get("action_pause"), DEFAULT_ACTION_PAUSE)
     display_name = str(block.get("display_name") or "").strip()
-    max_capture_bytes = _as_int(block.get("max_capture_bytes"), DEFAULT_MAX_CAPTURE_BYTES)
+    max_capture_bytes = _as_positive_int(block.get("max_capture_bytes"), DEFAULT_MAX_CAPTURE_BYTES)
 
     env_host = os.environ.get(ENV_HOST)
     if env_host:
